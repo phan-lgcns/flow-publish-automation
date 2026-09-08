@@ -1,84 +1,75 @@
-# Boomi Automation Pipeline
+# Boomi Flow Automation Pipeline
 
-This repository contains multi-pipeline Jenkins scripts and modular configuration files to automate Boomi Flow and Integration processes.
+This repository contains Jenkins pipeline scripts and configuration to automate the full Boomi Flow lifecycle:
+1. **Import Flows** via Flow sharing package tokens.
+2. **Refresh Connectors** by updating service elements in Boomi Flow.
+3. **Update Flow Identity Providers (IdP)** for master flows and any connected subflows discovered via the Boomi Flow Graph API.
+4. **Publish Master & Subflows** by activating the latest snapshot for all subflows first, followed by the master flow.
 
 ---
 
 ## 📁 Repository Structure
 
-### ⚙️ Jenkins Pipelines
-- **`Jenkinsfile.connector.refresh`**: Installs/refreshes Boomi Flow connectors in the specified tenant environment.
-- **`Jenkinsfile.flow.publish`**: Publishes the latest snapshot version of specified Boomi Flows.
-- **`Jenkinsfile.integration.deployment`**: Deploys Boomi Integration process packages to a target Boomi Atom/Environment. (Automatically skips execution if no component parameters are provided).
-
-### 📄 Modular Configurations (`config/`)
-- **`config/config.connector.json`**: Config for connector installation/refresh.
-- **`config/config.flow.publish.json`**: Config for flow publishing.
-- **`config/config.integration.deployment.json`**: Config for integration deployments.
+- **`Jenkinsfile`**: End-to-end Jenkins declarative pipeline executing the 4 automation stages.
+- **`config/config.json`**: Central configuration containing tenant settings, tokens, connector definitions, IdP ID, and flow IDs.
+- **`import_flow_command.txt`**: Reference curl command for flow import API.
+- **`update_idp.txt`**: Reference curl command for flow IdP update API.
+- **`get_flow_info.txt`**: Reference curl command for flow graph API (`/api/draw/2/graph/flow/{id}`).
+- **`gotten_flow_info.txt`**: Sample graph API response illustrating map elements and subflows.
 
 ---
 
-## ⚙️ Configuration Files & Properties
+## ⚙️ Configuration Properties (`config/config.json`)
 
-### 1. `config/config.connector.json`
 ```json
 {
   "tenantId": "85c2ac30-08cd-48d1-baf8-d66e05b9cb29",
   "flowBaseUrl": "https://us.flow-prod.boomi.com",
-  "flowUsername": "mizuhobankltd-ECNYC6.V4O7OK",
-  "flowPassword": "da028fc8-01a7-468e-b5ed-3d44438b50a8",
+  "importTokens": [
+    "wCcXd5HqLeY9MhFkvj6WFDbywLO6APYY7ECjMJU2/wP8m2vsU0CW6JunD8No0vD8"
+  ],
+  "overwriteExisting": false,
+  "identityProviderId": "b9acfc4d-c9b0-43d6-a827-55139d365fb8",
+  "masterFlowId": "43dedc28-aadc-44bc-a254-61402a2db5f7",
+  "flowIds": [
+    "43dedc28-aadc-44bc-a254-61402a2db5f7"
+  ],
   "connectors": [
     {
       "id": "bbb6a4c7-c0a8-4323-a4ec-292001ed27fe",
       "uri": "https://mizuho-dev.boomi.cloud/fs/RegisterBeneficiary",
       "developerName": "Register Beneficiary Service",
-      "developerSummary": null
+      "developerSummary": null,
+      "flowUsername": "mizuhobankltd-ECNYC6.V4O7OK",
+      "flowPassword": "da028fc8-01a7-468e-b5ed-3d44438b50a8"
     }
   ]
 }
 ```
 
-### 2. `config/config.flow.publish.json`
-```json
-{
-  "tenantId": "85c2ac30-08cd-48d1-baf8-d66e05b9cb29",
-  "flowBaseUrl": "https://us.flow-prod.boomi.com",
-  "flowIds": [
-    "43dedc28-aadc-44bc-a254-61402a2db5f7"
-  ]
-}
-```
-
-### 3. `config/config.integration.deployment.json`
-```json
-{
-  "boomiAccountId": "mizuhobankltd-ECNYC6",
-  "environmentName": "MIZUHO_DEV_MCS",
-  "componentNames": [],
-  "packageVersion": ""
-}
-```
-> **Note**: If `componentNames` and `packageVersion` are left empty (and no parameters are passed when triggering the Jenkins job), the `Jenkinsfile.integration.deployment` pipeline will safely skip execution without failing.
-
 ---
 
-## 🔑 Jenkins Requirements & Credentials
+## 🚀 Pipeline Execution & Stages
 
-1. **Required Jenkins Plugins**:
-   - **Pipeline Utility Steps Plugin**: Provides `readJSON`.
-   - **HTTP Request Plugin**: Provides `httpRequest`.
+The pipeline executes the following 4 stages sequentially:
 
-2. **Required Credentials**:
-   - **`boomi-flow-api-key`** (*Secret Text*): API Key for Boomi Flow access.
-   - **`boomi-platform-credentials`** (*Username with Password*): Boomi Platform user credentials for REST API interaction.
+```
+[Import Flows] ➔ [Refresh Connectors] ➔ [Update Flow Identity Providers (incl. Subflows)] ➔ [Publish Master & Subflows]
+```
 
----
+### 1. Import Flows
+Imports flows from `config.importTokens` via `POST /api/package/1/shared/flow`.
 
-## 🚀 Execution & Setup in Jenkins
+### 2. Refresh Connectors
+Re-installs and refreshes service connectors in `config.connectors` via `POST /api/draw/1/element/service/install`.
 
-To run 3 independent pipelines on every Git push:
-1. Create 3 distinct Pipeline Jobs in Jenkins pointing to this Git repository:
-   - **Job 1 (Connector Refresh)**: Script Path set to `Jenkinsfile.connector.refresh`
-   - **Job 2 (Flow Publish)**: Script Path set to `Jenkinsfile.flow.publish`
-   - **Job 3 (Integration Deployment)**: Script Path set to `Jenkinsfile.integration.deployment`
-2. Enable **GitHub hook trigger for GPRC polling** (or SCM Webhook) on all 3 jobs.
+### 3. Update Flow Identity Providers
+- Traverses the flow graph (`GET /api/draw/2/graph/flow/{id}`) starting from the root flow(s) to discover all referenced subflows (including nested subflows).
+- For each subflow and master flow, retrieves the flow model (`GET /api/draw/1/flow/{id}`), updates `identityProvider.id = targetIdpId`, and saves via `POST /api/draw/1/flow`.
+
+### 4. Publish Master & Subflows
+- Traverses the graph to find all subflows attached to the master flow.
+- Publishes and activates each subflow's latest snapshot first.
+- Publishes and activates the master flow's latest snapshot as default and outputs the runnable Play URL.
+
+ 
