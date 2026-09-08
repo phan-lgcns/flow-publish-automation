@@ -1,14 +1,14 @@
 {
   "tenantId": "85c2ac30-08cd-48d1-baf8-d66e05b9cb29",
   "flowBaseUrl": "https://us.flow-prod.boomi.com",
-  "flowUsername": "mizuhobankltd-ECNYC6.V4O7OK",
-  "flowPassword": "da028fc8-01a7-468e-b5ed-3d44438b50a8",
   "connectors": [
     {
       "id": "bbb6a4c7-c0a8-4323-a4ec-292001ed27fe",
       "uri": "https://mizuho-dev.boomi.cloud/fs/RegisterBeneficiary",
       "developerName": "Register Beneficiary Service",
-      "developerSummary": null
+      "developerSummary": null,
+      "flowUsername": "mizuhobankltd-ECNYC6.V4O7OK",
+      "flowPassword": "da028fc8-01a7-468e-b5ed-3d44438b50a8"
     }
   ],
   "identityProviders": [
