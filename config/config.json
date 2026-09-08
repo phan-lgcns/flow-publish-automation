@@ -4,7 +4,7 @@
   "importTokens": [
     "wCcXd5HqLeY9MhFkvj6WFDbywLO6APYY7ECjMJU2/wP8m2vsU0CW6JunD8No0vD8"
   ],
-  "overwriteExisting": false,
+  "overwriteExisting": true,
   "identityProviderId": "b9acfc4d-c9b0-43d6-a827-55139d365fb8",
   "masterFlowId": "43dedc28-aadc-44bc-a254-61402a2db5f7",
   "flowIds": [
