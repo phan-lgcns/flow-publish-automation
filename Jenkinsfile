@@ -212,10 +212,37 @@ pipeline {
                         echo "Target Identity Provider ID: ${targetIdpId}"
                         echo "Updating IDP for ${allFlowIds.size()} flow(s) (${discoveredSubflows.size()} subflow(s), ${initialFlowIds.size()} root flow(s))..."
 
-                        // Step 2: Update IDP on each flow
+                        // Step 2: Update IDP on each flow targeting the latest snapshot version to preserve all canvas elements/subflows
                         allFlowIds.each { flowId ->
-                            echo "=== Fetching definition for Flow ID: ${flowId} ==="
+                            echo "=== Fetching latest snapshot definition for Flow ID: ${flowId} ==="
 
+                            // Step 2a: Lookup latest snapshot to ensure we target the newest version (with subflows)
+                            def snapResponse = httpRequest(
+                                httpMode: 'GET',
+                                ignoreSslErrors: true,
+                                url: "${flowBaseUrl}/api/draw/1/flow/snap/${flowId}",
+                                customHeaders: commonHeaders,
+                                validResponseCodes: '100:599',
+                                consoleLogResponseBody: false
+                            )
+
+                            def latestVersionId = null
+                            def latestEditingToken = null
+
+                            if (snapResponse.status < 300 && snapResponse.content) {
+                                def snapshots = readJSON(text: snapResponse.content)
+                                if (snapshots instanceof List && !snapshots.isEmpty()) {
+                                    def latestSnapshot = snapshots.max { it.dateCreated }
+                                    if (latestSnapshot && latestSnapshot.id && latestSnapshot.id.versionId && !(latestSnapshot.id.versionId instanceof net.sf.json.JSONNull)) {
+                                        latestVersionId = latestSnapshot.id.versionId as String
+                                    }
+                                    if (latestSnapshot && latestSnapshot.editingToken && !(latestSnapshot.editingToken instanceof net.sf.json.JSONNull)) {
+                                        latestEditingToken = latestSnapshot.editingToken as String
+                                    }
+                                }
+                            }
+
+                            // Step 2b: Fetch flow definition
                             def getFlowResponse = httpRequest(
                                 httpMode: 'GET',
                                 ignoreSslErrors: true,
@@ -230,6 +257,18 @@ pipeline {
                             }
 
                             def flowObj = readJSON(text: getFlowResponse.content)
+
+                            // Explicitly bind flowObj to the latest snapshot version and editing token to prevent reverting canvas elements
+                            if (latestVersionId) {
+                                if (!flowObj.id || (flowObj.id instanceof net.sf.json.JSONNull)) {
+                                    flowObj.id = [:]
+                                }
+                                flowObj.id.versionId = latestVersionId
+                                echo "Binding flow update to latest snapshot version: ${latestVersionId}"
+                            }
+                            if (latestEditingToken) {
+                                flowObj.editingToken = latestEditingToken
+                            }
 
                             if (!flowObj.identityProvider || (flowObj.identityProvider instanceof net.sf.json.JSONNull)) {
                                 flowObj.identityProvider = [:]
