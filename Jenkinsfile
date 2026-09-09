@@ -155,7 +155,7 @@ pipeline {
                             [name: 'x-boomi-flow-api-key', value: FLOW_API_KEY, maskValue: true]
                         ]
 
-                        // Step 1: Discover all subflows from graph
+                        // Step 1: Discover all subflows from graph with JSONNull-safe parsing
                         def queue = [] as List
                         queue.addAll(initialFlowIds)
                         def visitedFlows = [] as Set
@@ -175,18 +175,23 @@ pipeline {
                                 consoleLogResponseBody: false
                             )
 
-                            if (graphResponse.status < 300) {
+                            if (graphResponse.status < 300 && graphResponse.content) {
                                 def graphObj = readJSON(text: graphResponse.content)
-                                if (graphObj.mapElements) {
+                                if (graphObj && graphObj.mapElements) {
                                     graphObj.mapElements.each { el ->
-                                        def subflowObj = el.subflow
-                                        if (subflowObj && subflowObj.id) {
-                                            def subflowId = subflowObj.id as String
-                                            if (!visitedFlows.contains(subflowId)) {
+                                        // Safely check for subflow element and non-JSONNull subflow object
+                                        def isSubflowType = el.elementType && el.elementType.toString().equalsIgnoreCase('subflow')
+                                        def hasSubflowObj = el.subflow != null && !(el.subflow instanceof net.sf.json.JSONNull)
+
+                                        if (isSubflowType && hasSubflowObj) {
+                                            def subflowObj = el.subflow
+                                            def subflowId = (subflowObj.id != null && !(subflowObj.id instanceof net.sf.json.JSONNull)) ? (subflowObj.id as String) : null
+                                            if (subflowId && !visitedFlows.contains(subflowId)) {
                                                 visitedFlows.add(subflowId)
                                                 discoveredSubflows.add(subflowId)
                                                 queue.add(subflowId)
-                                                echo "🔍 Discovered Subflow: '${subflowObj.developerName ?: subflowId}' (${subflowId}) under parent flow ${currentFlowId}"
+                                                def subflowName = (subflowObj.developerName != null && !(subflowObj.developerName instanceof net.sf.json.JSONNull)) ? subflowObj.developerName : subflowId
+                                                echo "🔍 Discovered Subflow: '${subflowName}' (${subflowId}) under parent flow ${currentFlowId}"
                                             }
                                         }
                                     }
@@ -220,24 +225,25 @@ pipeline {
                                 consoleLogResponseBody: true
                             )
 
-                            if (getFlowResponse.status >= 300) {
+                            if (getFlowResponse.status >= 300 || !getFlowResponse.content) {
                                 error("Failed to fetch Flow definition for Flow ID: ${flowId}. Status: ${getFlowResponse.status}")
                             }
 
                             def flowObj = readJSON(text: getFlowResponse.content)
 
-                            if (!flowObj.identityProvider) {
+                            if (!flowObj.identityProvider || (flowObj.identityProvider instanceof net.sf.json.JSONNull)) {
                                 flowObj.identityProvider = [:]
                             }
                             flowObj.identityProvider.id = targetIdpId
-                            if (flowObj.identityProvider.allowedGroups == null) {
+                            if (flowObj.identityProvider.allowedGroups == null || (flowObj.identityProvider.allowedGroups instanceof net.sf.json.JSONNull)) {
                                 flowObj.identityProvider.allowedGroups = []
                             }
-                            if (flowObj.identityProvider.allowedUsers == null) {
+                            if (flowObj.identityProvider.allowedUsers == null || (flowObj.identityProvider.allowedUsers instanceof net.sf.json.JSONNull)) {
                                 flowObj.identityProvider.allowedUsers = []
                             }
 
-                            echo "Updating Flow: ${flowObj.developerName ?: flowId} (${flowId}) with Identity Provider ID: ${targetIdpId}"
+                            def flowName = (flowObj.developerName != null && !(flowObj.developerName instanceof net.sf.json.JSONNull)) ? flowObj.developerName : flowId
+                            echo "Updating Flow: ${flowName} (${flowId}) with Identity Provider ID: ${targetIdpId}"
 
                             writeJSON file: 'flow_update_payload.json', json: flowObj
                             def payloadJson = readFile file: 'flow_update_payload.json'
@@ -260,7 +266,7 @@ pipeline {
                                 error("Failed to update IDP for Flow ID: ${flowId}. Status: ${saveResponse.status}")
                             }
 
-                            echo "✅ Successfully updated Identity Provider for Flow: ${flowObj.developerName ?: flowId} (${flowId})"
+                            echo "✅ Successfully updated Identity Provider for Flow: ${flowName} (${flowId})"
                         }
                         echo "✅ All Flow IDP updates completed successfully."
                     }
@@ -305,18 +311,22 @@ pipeline {
                                 consoleLogResponseBody: false
                             )
 
-                            if (graphResponse.status < 300) {
+                            if (graphResponse.status < 300 && graphResponse.content) {
                                 def graphObj = readJSON(text: graphResponse.content)
-                                if (graphObj.mapElements) {
+                                if (graphObj && graphObj.mapElements) {
                                     graphObj.mapElements.each { el ->
-                                        def subflowObj = el.subflow
-                                        if (subflowObj && subflowObj.id) {
-                                            def subflowId = subflowObj.id as String
-                                            if (!visitedFlows.contains(subflowId)) {
+                                        def isSubflowType = el.elementType && el.elementType.toString().equalsIgnoreCase('subflow')
+                                        def hasSubflowObj = el.subflow != null && !(el.subflow instanceof net.sf.json.JSONNull)
+
+                                        if (isSubflowType && hasSubflowObj) {
+                                            def subflowObj = el.subflow
+                                            def subflowId = (subflowObj.id != null && !(subflowObj.id instanceof net.sf.json.JSONNull)) ? (subflowObj.id as String) : null
+                                            if (subflowId && !visitedFlows.contains(subflowId)) {
                                                 visitedFlows.add(subflowId)
                                                 subflowIds.add(subflowId)
                                                 queue.add(subflowId)
-                                                echo "🔍 Discovered Subflow to publish: '${subflowObj.developerName ?: subflowId}' (${subflowId})"
+                                                def subflowName = (subflowObj.developerName != null && !(subflowObj.developerName instanceof net.sf.json.JSONNull)) ? subflowObj.developerName : subflowId
+                                                echo "🔍 Discovered Subflow to publish: '${subflowName}' (${subflowId})"
                                             }
                                         }
                                     }
@@ -338,7 +348,7 @@ pipeline {
                                     consoleLogResponseBody: true
                                 )
 
-                                if (snapResponse.status >= 300) {
+                                if (snapResponse.status >= 300 || !snapResponse.content) {
                                     error("Failed to list snapshots for Subflow ID: ${subflowId}. Status: ${snapResponse.status}")
                                 }
 
@@ -348,7 +358,11 @@ pipeline {
                                 }
 
                                 def latestSnapshot = snapshots.max { it.dateCreated }
-                                def versionId = latestSnapshot.id.versionId
+                                def versionId = (latestSnapshot?.id?.versionId != null && !(latestSnapshot.id.versionId instanceof net.sf.json.JSONNull)) ? (latestSnapshot.id.versionId as String) : null
+
+                                if (!versionId) {
+                                    error("Could not determine version ID for Subflow ID: ${subflowId}")
+                                }
 
                                 echo "Latest version for Subflow ${subflowId}: ${versionId} (created ${latestSnapshot.dateCreated})"
 
@@ -379,7 +393,7 @@ pipeline {
                             consoleLogResponseBody: true
                         )
 
-                        if (snapResponse.status >= 300) {
+                        if (snapResponse.status >= 300 || !snapResponse.content) {
                             error("Failed to list snapshots for Master Flow ID: ${masterFlowId}. Status: ${snapResponse.status}")
                         }
 
@@ -389,7 +403,7 @@ pipeline {
                         }
 
                         def latestSnapshot = snapshots.max { it.dateCreated }
-                        def versionId = latestSnapshot.id.versionId
+                        def versionId = (latestSnapshot?.id?.versionId != null && !(latestSnapshot.id.versionId instanceof net.sf.json.JSONNull)) ? (latestSnapshot.id.versionId as String) : null
 
                         if (!versionId) {
                             error("Could not determine version ID for Master Flow ID: ${masterFlowId}")
